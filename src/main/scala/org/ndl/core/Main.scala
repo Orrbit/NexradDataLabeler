@@ -39,6 +39,9 @@ import org.ndl.models.InputStormEvent
 import org.ndl.infrastructure.ConfigUtils
 import pureconfig.generic.auto._
 
+import scala.concurrent.duration.Duration
+import scala.concurrent.{ Await, Future }
+
 final case class NexradDataConf(
   stormLocationFile: String,
   nexradBucket: String
@@ -56,18 +59,15 @@ object Main extends LazyLogging{
     logger.info("Starting data label pipeline...")
 
 
-    val firstLine = Stages.csvFileSource(conf.stormLocationFile)
+    val firstLine = Stages.csvFileSource(conf.stormLocationFile).limit(150)
       .via(Stages.flowMapToStormEvent())
       .via(Stages.flowStormEventToBucketContents(conf.nexradBucket))
       .via(Stages.flowGetClosestFileToStormEvent())
-      .runWith(Sink.head)
+      .runWith(Sink.foreach( tuple => {
+        logger.info(s"\n${tuple._2.toString()} \n\t Above event has closest bucket ${tuple._1.key} \n\n")
+      }))
 
-      firstLine.onComplete({
-        case Success((b: ListBucketResultContents, storm: InputStormEvent)) => logger.info(s"${storm.eventId} with closest bucket ${b.key}")
-        case Failure(exception) => logger.warn(exception.toString())
-      })
-
-    Thread.sleep(10000) //without thread sleep, sometimes main will exit
+    Await.ready(firstLine, Duration.Inf)
 
     return //return statement here to disable the flow into viewing netcdf data
 
@@ -77,7 +77,7 @@ object Main extends LazyLogging{
       S3.download(conf.nexradBucket, bucketKey)
       
     val fileStream = s3File.runWith(Sink.head)
-    
+
     fileStream.onComplete({
       case Success(fileOption) => fileOption match {
         case Some(value) => {
