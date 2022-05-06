@@ -33,3 +33,23 @@ lazy val root = (project in file(".")).
       ShadeRule.rename("shapeless.**" -> "shadeshapeless.@1").inAll
     )
   )
+
+// Custom task to zip files for Project submission
+lazy val zipProject = taskKey[Unit]("zip files for Project submission")
+
+zipProject := {
+  val bd = baseDirectory.value
+  val targetFile = s"${bd.getAbsolutePath}/scalaProject.zip"
+  val ignoredPaths =
+    ".*(\\.idea|target|\\.DS_Store|\\.bloop|\\.metals|\\.vsc)/*".r.pattern
+  val fileFilter = new FileFilter {
+    override def accept(f: File) =
+      !ignoredPaths.matcher(f.getAbsolutePath).lookingAt
+  }
+  println("zipping Project files ...")
+  IO.delete(new File(targetFile))
+  IO.zip(
+    Path.selectSubpaths(new File(bd.getAbsolutePath), fileFilter),
+    new File(targetFile)
+  )
+}
